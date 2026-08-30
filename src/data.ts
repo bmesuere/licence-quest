@@ -11,12 +11,12 @@ export const SCHEMA_VERSION = 1;
 const DELETION_RETENTION_DAYS = 180;
 
 export const FLANDERS_MANOEUVRES = [
-  { id: "flanders-parallel-right", group: 1 as const, name: "Parallel parking on the right between two vehicles" },
-  { id: "flanders-parallel-left", group: 1 as const, name: "Parallel parking on the left between two vehicles" },
-  { id: "flanders-perpendicular-reverse", group: 1 as const, name: "Reverse into a perpendicular parking space" },
-  { id: "flanders-perpendicular-forward", group: 2 as const, name: "Drive forward into a perpendicular parking space" },
-  { id: "flanders-reverse-straight", group: 2 as const, name: "Reverse in a straight line" },
-  { id: "flanders-turn-narrow-street", group: 2 as const, name: "Turn around in a narrow street" },
+  { id: "flanders-parallel-right", name: "Right-side parallel parking" },
+  { id: "flanders-parallel-left", name: "Left-side parallel parking" },
+  { id: "flanders-perpendicular-reverse", name: "Reverse perpendicular parking" },
+  { id: "flanders-perpendicular-forward", name: "Forward perpendicular parking" },
+  { id: "flanders-reverse-straight", name: "Reversing in a straight line" },
+  { id: "flanders-turn-narrow-street", name: "Turning around in a narrow street" },
 ] as const;
 
 export function createFlandersManoeuvres(timestamp = new Date().toISOString()): Manoeuvre[] {
@@ -145,7 +145,7 @@ function normalizeNamedList<T extends PracticeRoute | Manoeuvre>(
         updatedAt: isTimestamp(item.updatedAt) ? item.updatedAt : common.createdAt,
       } as T];
     }
-    return [{ ...common, group: item.group === 1 || item.group === 2 ? item.group : undefined } as T];
+    return [common as T];
   });
 }
 

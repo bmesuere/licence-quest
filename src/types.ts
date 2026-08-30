@@ -27,7 +27,6 @@ export interface PracticeRoute {
 export interface Manoeuvre {
   id: string;
   name: string;
-  group?: 1 | 2;
   createdAt: string;
 }
 
