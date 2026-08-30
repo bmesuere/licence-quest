@@ -6,6 +6,7 @@
   "scripts": {
     "login": "wrangler login",
     "kv:create": "wrangler kv namespace create DRIVING_SYNC",
+    "secret:put": "wrangler secret put SYNC_CODE_HASH",
     "check": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"

@@ -12,3 +12,13 @@ ALLOWED_ORIGINS = "https://bmesuere.github.io"
 [[kv_namespaces]]
 binding = "DRIVING_SYNC"
 id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+# Supplemental protection for a leaked valid sync code. Invalid codes are
+# rejected before this limiter or KV is touched.
+[[ratelimits]]
+name = "WRITE_RATE_LIMITER"
+namespace_id = "472019"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60
