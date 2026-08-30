@@ -17,7 +17,11 @@ export interface PracticeRoute {
   id: string;
   name: string;
   googleMapsUrl: string;
+  priorCompletions: number;
+  distanceKm?: number;
+  durationMinutes?: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface Manoeuvre {

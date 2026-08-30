@@ -38,4 +38,17 @@ describe("tracker data", () => {
     });
     expect(normalized.drives.map((drive) => drive.id)).toEqual(["good"]);
   });
+
+  it("adds safe defaults to older routes and keeps valid route metadata", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-30T12:00:00Z"));
+    const normalized = normalizeTracker({
+      ...tracker,
+      routes: [
+        { id: "legacy", name: "Legacy loop", googleMapsUrl: "https://maps.google.com/legacy", createdAt: "2026-08-01T12:00:00Z" },
+        { id: "known", name: "Known loop", googleMapsUrl: "https://maps.google.com/known", priorCompletions: 7, distanceKm: 18.4, durationMinutes: 42, createdAt: "2026-08-02T12:00:00Z", updatedAt: "2026-08-03T12:00:00Z" },
+      ],
+    });
+    expect(normalized.routes[0]).toMatchObject({ id: "legacy", priorCompletions: 0, updatedAt: "2026-08-01T12:00:00Z" });
+    expect(normalized.routes[1]).toMatchObject({ id: "known", priorCompletions: 7, distanceKm: 18.4, durationMinutes: 42 });
+  });
 });

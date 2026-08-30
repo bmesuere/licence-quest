@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useMemo, useState } from "react";
 import { loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
-import { daysUntil, drivesThisWeek, durationLabel, paceStatus, routeCounts } from "./metrics";
+import { daysUntil, drivesThisWeek, durationLabel, paceStatus, routeCounts, routeMetadata } from "./metrics";
 import {
   forgetSyncCode,
   formatSyncCode,
@@ -30,6 +30,19 @@ function id(prefix: string): string {
 function formatDate(dateKey: string, options?: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat("en-GB", options ?? { day: "numeric", month: "short", year: "numeric" })
     .format(new Date(`${dateKey}T12:00:00`));
+}
+
+function optionalPositiveNumber(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function routeMetadataSummary(metadata: ReturnType<typeof routeMetadata>): string | undefined {
+  const parts: string[] = [];
+  if (metadata.distanceKm !== undefined) parts.push(`${metadata.distanceSource === "average" ? "Avg " : ""}${metadata.distanceKm.toFixed(1)} km`);
+  if (metadata.durationMinutes !== undefined) parts.push(`${metadata.durationSource === "average" ? "Avg " : ""}${durationLabel(Math.round(metadata.durationMinutes))}`);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 function App() {
@@ -170,6 +183,8 @@ function Dashboard({
 }) {
   const practiceDone = practiceCount >= tracker.settings.weeklyPracticeGoal;
   const manoeuvreDone = manoeuvreCount >= tracker.settings.weeklyManoeuvreGoal;
+  const suggestedMetadata = suggestedRoute ? routeMetadata(tracker, suggestedRoute) : undefined;
+  const suggestedMetadataText = suggestedMetadata ? routeMetadataSummary(suggestedMetadata) : undefined;
   return (
     <>
       <section className="hero">
@@ -231,6 +246,7 @@ function Dashboard({
             <p className="kicker">Route roulette</p>
             <h2>{suggestedRoute ? suggestedRoute.name : "Where are we driving today?"}</h2>
             <p>{suggestedRoute ? `You've completed this loop ${routeCount} ${routeCount === 1 ? "time" : "times"}.` : tracker.routes.length ? `${tracker.routes.length} routes are waiting in your garage.` : "Add some Google Maps loops, then let the route box decide."}</p>
+            {suggestedMetadataText && <div className="route-meta-summary">{suggestedMetadataText}</div>}
             <div className="route-actions">
               <button className="secondary-button" type="button" onClick={onRandomRoute}><ShuffleIcon /> {suggestedRoute ? "Spin again" : "Pick a random route"}</button>
               {suggestedRoute && <button className="text-button" type="button" onClick={onUseRoute}>Use this route</button>}
@@ -327,11 +343,31 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
 function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument; counts: Map<string, number>; onCommit: (tracker: TrackerDocument) => void; flash: (message: string) => void }) {
   const [routeName, setRouteName] = useState("");
   const [routeUrl, setRouteUrl] = useState("");
+  const [routePriorCompletions, setRoutePriorCompletions] = useState("0");
+  const [routeDistance, setRouteDistance] = useState("");
+  const [routeDuration, setRouteDuration] = useState("");
+  const [editingRouteId, setEditingRouteId] = useState<string>();
   const [manoeuvreName, setManoeuvreName] = useState("");
   function addRoute(event: FormEvent) {
     event.preventDefault();
-    const route = { id: id("route"), name: routeName.trim(), googleMapsUrl: routeUrl.trim(), createdAt: new Date().toISOString() };
-    onCommit({ ...tracker, routes: [...tracker.routes, route] }); setRouteName(""); setRouteUrl(""); flash("Route added to the garage.");
+    const stamp = new Date().toISOString();
+    const route = {
+      id: id("route"),
+      name: routeName.trim(),
+      googleMapsUrl: routeUrl.trim(),
+      priorCompletions: Number(routePriorCompletions),
+      distanceKm: optionalPositiveNumber(routeDistance),
+      durationMinutes: optionalPositiveNumber(routeDuration),
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    onCommit({ ...tracker, routes: [...tracker.routes, route] });
+    setRouteName(""); setRouteUrl(""); setRoutePriorCompletions("0"); setRouteDistance(""); setRouteDuration(""); flash("Route added to the garage.");
+  }
+  function updateRoute(route: TrackerDocument["routes"][number]) {
+    onCommit({ ...tracker, routes: tracker.routes.map((item) => item.id === route.id ? route : item) });
+    setEditingRouteId(undefined);
+    flash("Route details saved.");
   }
   function addManoeuvre(event: FormEvent) {
     event.preventDefault();
@@ -340,8 +376,24 @@ function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument
   return <section className="page-view"><div className="page-hero garage-hero"><div><p className="kicker">Loadout</p><h1>Route garage</h1><p>Build your loop collection and configure the skills you want to practise.</p></div><span aria-hidden="true"><MapIcon /></span></div>
     <div className="garage-grid">
       <section className="panel manage-panel"><div className="panel-title"><div><p className="kicker">Practice loops</p><h2>Saved routes</h2></div><span className="count-badge">{tracker.routes.length}</span></div>
-        <form className="stack-form" onSubmit={addRoute} action="/" method="post"><label><span>Route name</span><input required maxLength={100} placeholder="e.g. City centre loop" value={routeName} onChange={(e) => setRouteName(e.target.value)} /></label><label><span>Google Maps link</span><input required type="url" inputMode="url" placeholder="https://maps.app.goo.gl/..." value={routeUrl} onChange={(e) => setRouteUrl(e.target.value)} /></label><button className="secondary-button" type="submit">+ Add route</button></form>
-        {tracker.routes.length === 0 ? <EmptyState icon="?" title="Your garage is empty" text="Add a Google Maps loop to start route roulette." /> : <ul className="manage-list">{tracker.routes.map((route) => <li key={route.id}><span className="route-number" aria-hidden="true">{counts.get(route.id) ?? 0}</span><div><strong>{route.name}</strong><small>{counts.get(route.id) ?? 0} completed {(counts.get(route.id) ?? 0) === 1 ? "lap" : "laps"}</small></div><a className="icon-button" href={route.googleMapsUrl} target="_blank" rel="noreferrer" aria-label={`Open ${route.name} in Google Maps`}><ExternalIcon /></a><button className="icon-button danger" type="button" aria-label={`Delete ${route.name}`} onClick={() => { if (window.confirm(`Delete “${route.name}”? Existing drives stay in the logbook.`)) onCommit({ ...tracker, routes: tracker.routes.filter((item) => item.id !== route.id) }); }}><TrashIcon /></button></li>)}</ul>}
+        <form className="stack-form route-add-form" onSubmit={addRoute} action="/" method="post">
+          <label htmlFor="new-route-name"><span>Route name</span><input id="new-route-name" name="route-name" required maxLength={100} placeholder="e.g. City centre loop" value={routeName} onChange={(e) => setRouteName(e.target.value)} /></label>
+          <label htmlFor="new-route-url"><span>Google Maps link</span><input id="new-route-url" name="route-url" required type="url" inputMode="url" placeholder="https://maps.app.goo.gl/..." value={routeUrl} onChange={(e) => setRouteUrl(e.target.value)} /></label>
+          <div className="route-detail-fields">
+            <label htmlFor="new-route-count"><span>Previous completions</span><input id="new-route-count" name="previous-completions" type="number" inputMode="numeric" min="0" max="10000" step="1" required value={routePriorCompletions} onChange={(e) => setRoutePriorCompletions(e.target.value)} /></label>
+            <label htmlFor="new-route-distance"><span>Distance <small>optional</small></span><span className="unit-input"><input id="new-route-distance" name="distance-km" type="number" inputMode="decimal" min="0.1" max="1000" step="0.1" value={routeDistance} onChange={(e) => setRouteDistance(e.target.value)} /><b>km</b></span></label>
+            <label htmlFor="new-route-duration"><span>Duration <small>optional</small></span><span className="unit-input"><input id="new-route-duration" name="duration-minutes" type="number" inputMode="numeric" min="1" max="1440" step="1" value={routeDuration} onChange={(e) => setRouteDuration(e.target.value)} /><b>min</b></span></label>
+          </div>
+          <p className="form-hint">Leave distance or duration blank to use the average from logged drives.</p>
+          <button className="secondary-button" type="submit">+ Add route</button>
+        </form>
+        {tracker.routes.length === 0 ? <EmptyState icon="?" title="Your garage is empty" text="Add a Google Maps loop to start route roulette." /> : <ul className="manage-list route-list">{tracker.routes.map((route) => {
+          const totalCount = counts.get(route.id) ?? route.priorCompletions;
+          const loggedCount = Math.max(0, totalCount - route.priorCompletions);
+          const metadata = routeMetadata(tracker, route);
+          const metadataText = routeMetadataSummary(metadata);
+          return <li className="route-list-item" key={route.id}><div className="route-list-row"><span className="route-number" aria-hidden="true">{totalCount}</span><div className="route-list-copy"><strong>{route.name}</strong><small>{totalCount} completed {totalCount === 1 ? "lap" : "laps"} · {route.priorCompletions} before tracking + {loggedCount} logged</small><small>{metadataText ?? "Distance and duration will be derived after the first logged drive."}</small></div><button className="route-edit-button" type="button" aria-expanded={editingRouteId === route.id} aria-controls={`edit-${route.id}`} onClick={() => setEditingRouteId((current) => current === route.id ? undefined : route.id)}>{editingRouteId === route.id ? "Close" : "Edit"}</button><a className="icon-button" href={route.googleMapsUrl} target="_blank" rel="noreferrer" aria-label={`Open ${route.name} in Google Maps`}><ExternalIcon /></a><button className="icon-button danger" type="button" aria-label={`Delete ${route.name}`} onClick={() => { if (window.confirm(`Delete “${route.name}”? Existing drives stay in the logbook.`)) onCommit({ ...tracker, routes: tracker.routes.filter((item) => item.id !== route.id) }); }}><TrashIcon /></button></div>{editingRouteId === route.id && <RouteEditForm key={route.updatedAt} route={route} onSave={updateRoute} onCancel={() => setEditingRouteId(undefined)} />}</li>;
+        })}</ul>}
       </section>
       <section className="panel manage-panel"><div className="panel-title"><div><p className="kicker">Skill deck</p><h2>Manoeuvres</h2></div><span className="count-badge orange">{tracker.manoeuvres.length}</span></div>
         <form className="inline-form" onSubmit={addManoeuvre} action="/" method="post"><label><span>Manoeuvre name</span><input required maxLength={100} placeholder="e.g. Parallel parking" value={manoeuvreName} onChange={(e) => setManoeuvreName(e.target.value)} /></label><button className="secondary-button" type="submit">+ Add</button></form>
@@ -349,6 +401,30 @@ function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument
       </section>
     </div>
   </section>;
+}
+
+function RouteEditForm({ route, onSave, onCancel }: { route: TrackerDocument["routes"][number]; onSave: (route: TrackerDocument["routes"][number]) => void; onCancel: () => void }) {
+  const [name, setName] = useState(route.name);
+  const [url, setUrl] = useState(route.googleMapsUrl);
+  const [priorCompletions, setPriorCompletions] = useState(String(route.priorCompletions));
+  const [distance, setDistance] = useState(route.distanceKm === undefined ? "" : String(route.distanceKm));
+  const [duration, setDuration] = useState(route.durationMinutes === undefined ? "" : String(route.durationMinutes));
+  const prefix = `edit-${route.id}`;
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSave({ ...route, name: name.trim(), googleMapsUrl: url.trim(), priorCompletions: Number(priorCompletions), distanceKm: optionalPositiveNumber(distance), durationMinutes: optionalPositiveNumber(duration), updatedAt: new Date().toISOString() });
+  }
+  return <form id={prefix} className="route-edit-form" onSubmit={submit} action="/" method="post">
+    <div className="route-edit-grid">
+      <label htmlFor={`${prefix}-name`}><span>Route name</span><input id={`${prefix}-name`} name="route-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
+      <label htmlFor={`${prefix}-url`}><span>Google Maps link</span><input id={`${prefix}-url`} name="route-url" required type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} /></label>
+      <label htmlFor={`${prefix}-count`}><span>Previous completions</span><input id={`${prefix}-count`} name="previous-completions" type="number" inputMode="numeric" min="0" max="10000" step="1" required value={priorCompletions} onChange={(e) => setPriorCompletions(e.target.value)} /></label>
+      <label htmlFor={`${prefix}-distance`}><span>Distance <small>optional</small></span><span className="unit-input"><input id={`${prefix}-distance`} name="distance-km" type="number" inputMode="decimal" min="0.1" max="1000" step="0.1" value={distance} onChange={(e) => setDistance(e.target.value)} /><b>km</b></span></label>
+      <label htmlFor={`${prefix}-duration`}><span>Duration <small>optional</small></span><span className="unit-input"><input id={`${prefix}-duration`} name="duration-minutes" type="number" inputMode="numeric" min="1" max="1440" step="1" value={duration} onChange={(e) => setDuration(e.target.value)} /><b>min</b></span></label>
+    </div>
+    <p className="form-hint">Previous completions are added to logged drives. Clear distance or duration to use the logged-drive average.</p>
+    <div className="route-edit-actions"><button className="secondary-button" type="submit">Save changes</button><button className="text-button" type="button" onClick={onCancel}>Cancel</button></div>
+  </form>;
 }
 
 function Settings({ tracker, onCommit, sync, flash }: { tracker: TrackerDocument; onCommit: (tracker: TrackerDocument) => void; sync: ReturnType<typeof useSync>; flash: (message: string) => void }) {

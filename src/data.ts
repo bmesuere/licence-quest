@@ -114,7 +114,23 @@ function normalizeNamedList<T extends PracticeRoute | Manoeuvre>(
         const url = new URL(item.googleMapsUrl);
         if (!/^https?:$/.test(url.protocol)) return [];
       } catch { return []; }
-      return [{ ...common, googleMapsUrl: item.googleMapsUrl } as T];
+      const priorCompletions = isFiniteNumber(item.priorCompletions) && item.priorCompletions >= 0
+        ? Math.min(10_000, Math.round(item.priorCompletions))
+        : 0;
+      const distanceKm = isFiniteNumber(item.distanceKm) && item.distanceKm > 0 && item.distanceKm <= 1000
+        ? item.distanceKm
+        : undefined;
+      const durationMinutes = isFiniteNumber(item.durationMinutes) && item.durationMinutes > 0 && item.durationMinutes <= 1440
+        ? Math.round(item.durationMinutes)
+        : undefined;
+      return [{
+        ...common,
+        googleMapsUrl: item.googleMapsUrl,
+        priorCompletions,
+        distanceKm,
+        durationMinutes,
+        updatedAt: isTimestamp(item.updatedAt) ? item.updatedAt : common.createdAt,
+      } as T];
     }
     return [common as T];
   });

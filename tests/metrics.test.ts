@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultTracker } from "../src/data";
-import { daysUntil, drivesThisWeek, paceStatus, weekStartKey } from "../src/metrics";
+import { daysUntil, drivesThisWeek, paceStatus, routeCounts, routeMetadata, weekStartKey } from "../src/metrics";
 import type { DriveRecord } from "../src/types";
 
 function drive(date: string, distanceKm = 20): DriveRecord {
@@ -40,5 +40,28 @@ describe("kilometre pace", () => {
     expect(status.totalKm).toBe(60);
     expect(status.onTrack).toBe(true);
     expect(status.deltaKm).toBeCloseTo(10);
+  });
+});
+
+describe("route progress and metadata", () => {
+  it("adds logged drives to the route's previous completion count", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    tracker.routes = [{ id: "route-a", name: "Loop A", googleMapsUrl: "https://maps.google.com/a", priorCompletions: 4, createdAt: tracker.createdAt, updatedAt: tracker.createdAt }];
+    tracker.drives = [
+      { ...drive("2026-08-20", 12), id: "one", routeId: "route-a" },
+      { ...drive("2026-08-21", 18), id: "two", routeId: "route-a" },
+    ];
+    expect(routeCounts(tracker).get("route-a")).toBe(6);
+  });
+
+  it("uses manual metadata first and averages logged drives for blank fields", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    const route = { id: "route-a", name: "Loop A", googleMapsUrl: "https://maps.google.com/a", priorCompletions: 0, distanceKm: 15, createdAt: tracker.createdAt, updatedAt: tracker.createdAt };
+    tracker.routes = [route];
+    tracker.drives = [
+      { ...drive("2026-08-20", 12), id: "one", routeId: "route-a", durationMinutes: 30 },
+      { ...drive("2026-08-21", 18), id: "two", routeId: "route-a", durationMinutes: 50 },
+    ];
+    expect(routeMetadata(tracker, route)).toMatchObject({ distanceKm: 15, distanceSource: "manual", durationMinutes: 40, durationSource: "average", loggedDriveCount: 2 });
   });
 });

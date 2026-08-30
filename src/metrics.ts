@@ -1,4 +1,4 @@
-import type { DriveRecord, TrackerDocument } from "./types";
+import type { DriveRecord, PracticeRoute, TrackerDocument } from "./types";
 import { localDateKey } from "./data";
 
 const DAY_MS = 86_400_000;
@@ -29,11 +29,30 @@ export function totalKm(drives: DriveRecord[]): number {
 }
 
 export function routeCounts(tracker: TrackerDocument): Map<string, number> {
-  const counts = new Map<string, number>();
+  const counts = new Map(tracker.routes.map((route) => [route.id, route.priorCompletions]));
   for (const drive of tracker.drives) {
     if (drive.routeId) counts.set(drive.routeId, (counts.get(drive.routeId) ?? 0) + 1);
   }
   return counts;
+}
+
+export interface RouteMetadata {
+  distanceKm?: number;
+  durationMinutes?: number;
+  distanceSource?: "manual" | "average";
+  durationSource?: "manual" | "average";
+  loggedDriveCount: number;
+}
+
+export function routeMetadata(tracker: TrackerDocument, route: PracticeRoute): RouteMetadata {
+  const drives = tracker.drives.filter((drive) => drive.routeId === route.id);
+  return {
+    distanceKm: route.distanceKm ?? (drives.length > 0 ? drives.reduce((sum, drive) => sum + drive.distanceKm, 0) / drives.length : undefined),
+    durationMinutes: route.durationMinutes ?? (drives.length > 0 ? drives.reduce((sum, drive) => sum + drive.durationMinutes, 0) / drives.length : undefined),
+    distanceSource: route.distanceKm !== undefined ? "manual" : drives.length > 0 ? "average" : undefined,
+    durationSource: route.durationMinutes !== undefined ? "manual" : drives.length > 0 ? "average" : undefined,
+    loggedDriveCount: drives.length,
+  };
 }
 
 export interface PaceStatus {
