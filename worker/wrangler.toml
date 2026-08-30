@@ -11,7 +11,7 @@ ALLOWED_ORIGINS = "https://bmesuere.github.io"
 
 [[kv_namespaces]]
 binding = "DRIVING_SYNC"
-id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+id = "15b2db5c50584f93affa4d4cc5a09cc7"
 
 # Supplemental protection for a leaked valid sync code. Invalid codes are
 # rejected before this limiter or KV is touched.
