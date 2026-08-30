@@ -1,0 +1,14 @@
+{
+  "name": "licence-quest-sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "login": "wrangler login",
+    "kv:create": "wrangler kv namespace create DRIVING_SYNC",
+    "check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": { "wrangler": "^4.123.0" }
+}

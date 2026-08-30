@@ -1,0 +1,12 @@
+{
+  "name": "Licence Quest",
+  "short_name": "Licence Quest",
+  "description": "Track driving practice on the road to your practical exam.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8f7fc",
+  "theme_color": "#7257f2",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

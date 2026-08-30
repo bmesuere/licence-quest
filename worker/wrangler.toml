@@ -1,0 +1,14 @@
+name = "licence-quest-sync"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+[observability]
+enabled = true
+
+[vars]
+# Origin only, no path. Add localhost temporarily for local testing.
+ALLOWED_ORIGINS = "https://bmesuere.github.io"
+
+[[kv_namespaces]]
+binding = "DRIVING_SYNC"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
