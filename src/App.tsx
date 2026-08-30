@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
+import { createFlandersManoeuvres, loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
 import { daysUntil, drivesThisWeek, durationLabel, paceStatus, routeCounts, routeMetadata } from "./metrics";
 import {
   forgetSyncCode,
@@ -394,6 +394,10 @@ function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument
     event.preventDefault();
     onCommit({ ...tracker, manoeuvres: [...tracker.manoeuvres, { id: id("manoeuvre"), name: manoeuvreName.trim(), createdAt: new Date().toISOString() }] }); setManoeuvreName(""); flash("Manoeuvre added to your skill deck.");
   }
+  function addFlandersSet() {
+    onCommit({ ...tracker, manoeuvres: createFlandersManoeuvres() });
+    flash("Flanders exam manoeuvres added.");
+  }
   return <section className="page-view"><div className="page-hero garage-hero"><div><p className="kicker">Loadout</p><h1>Route garage</h1><p>Build your loop collection and configure the skills you want to practise.</p></div><span aria-hidden="true"><MapIcon /></span></div>
     <div className="garage-grid">
       <section className="panel manage-panel"><div className="panel-title"><div><p className="kicker">Practice loops</p><h2>Saved routes</h2></div><span className="count-badge">{tracker.routes.length}</span></div>
@@ -418,7 +422,7 @@ function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument
       </section>
       <section className="panel manage-panel"><div className="panel-title"><div><p className="kicker">Skill deck</p><h2>Manoeuvres</h2></div><span className="count-badge orange">{tracker.manoeuvres.length}</span></div>
         <form className="inline-form" onSubmit={addManoeuvre} action="/" method="post"><label><span>Manoeuvre name</span><input required maxLength={100} placeholder="e.g. Parallel parking" value={manoeuvreName} onChange={(e) => setManoeuvreName(e.target.value)} /></label><button className="secondary-button" type="submit">+ Add</button></form>
-        {tracker.manoeuvres.length === 0 ? <EmptyState icon="↔" title="No skills configured" text="Add the manoeuvres from your exam checklist." /> : <ul className="manage-list compact">{tracker.manoeuvres.map((manoeuvre) => <li key={manoeuvre.id}><span className="skill-dot" aria-hidden="true">✓</span><div><strong>{manoeuvre.name}</strong></div><button className="icon-button danger" type="button" aria-label={`Delete ${manoeuvre.name}`} onClick={() => onCommit({ ...tracker, manoeuvres: tracker.manoeuvres.filter((item) => item.id !== manoeuvre.id) })}><TrashIcon /></button></li>)}</ul>}
+        {tracker.manoeuvres.length === 0 ? <div className="preset-empty"><EmptyState icon="↔" title="No skills configured" text="Add the standard Flanders practical-exam set or enter manoeuvres one by one." /><button className="secondary-button" type="button" onClick={addFlandersSet}>+ Add Flanders exam set</button></div> : <ul className="manage-list compact">{tracker.manoeuvres.map((manoeuvre) => <li key={manoeuvre.id}><span className="skill-dot" aria-hidden="true">✓</span><div><strong>{manoeuvre.name}</strong>{manoeuvre.group && <small>Flanders exam · Group {manoeuvre.group}</small>}</div><button className="icon-button danger" type="button" aria-label={`Delete ${manoeuvre.name}`} onClick={() => onCommit({ ...tracker, manoeuvres: tracker.manoeuvres.filter((item) => item.id !== manoeuvre.id) })}><TrashIcon /></button></li>)}</ul>}
       </section>
     </div>
   </section>;

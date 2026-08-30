@@ -16,6 +16,16 @@ describe("tracker data", () => {
       weeklyPracticeGoal: 1,
       weeklyManoeuvreGoal: 1,
     });
+    expect(tracker.manoeuvres).toHaveLength(6);
+    expect(tracker.manoeuvres.map((manoeuvre) => manoeuvre.group)).toEqual([1, 1, 1, 2, 2, 2]);
+    expect(tracker.manoeuvres.map((manoeuvre) => manoeuvre.name)).toEqual([
+      "Parallel parking on the right between two vehicles",
+      "Parallel parking on the left between two vehicles",
+      "Reverse into a perpendicular parking space",
+      "Drive forward into a perpendicular parking space",
+      "Reverse in a straight line",
+      "Turn around in a narrow street",
+    ]);
   });
 
   it("drops malformed drives while keeping valid records", () => {

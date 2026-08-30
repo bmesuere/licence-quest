@@ -10,6 +10,19 @@ const LEGACY_STORAGE_KEY = "road-to-ready.tracker.v1";
 export const SCHEMA_VERSION = 1;
 const DELETION_RETENTION_DAYS = 180;
 
+export const FLANDERS_MANOEUVRES = [
+  { id: "flanders-parallel-right", group: 1 as const, name: "Parallel parking on the right between two vehicles" },
+  { id: "flanders-parallel-left", group: 1 as const, name: "Parallel parking on the left between two vehicles" },
+  { id: "flanders-perpendicular-reverse", group: 1 as const, name: "Reverse into a perpendicular parking space" },
+  { id: "flanders-perpendicular-forward", group: 2 as const, name: "Drive forward into a perpendicular parking space" },
+  { id: "flanders-reverse-straight", group: 2 as const, name: "Reverse in a straight line" },
+  { id: "flanders-turn-narrow-street", group: 2 as const, name: "Turn around in a narrow street" },
+] as const;
+
+export function createFlandersManoeuvres(timestamp = new Date().toISOString()): Manoeuvre[] {
+  return FLANDERS_MANOEUVRES.map((manoeuvre) => ({ ...manoeuvre, createdAt: timestamp }));
+}
+
 export function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -35,7 +48,7 @@ export function createDefaultTracker(now = new Date()): TrackerDocument {
     drives: [],
     deletions: {},
     routes: [],
-    manoeuvres: [],
+    manoeuvres: createFlandersManoeuvres(timestamp),
     settings: {
       examDate: nextExamDate(now),
       kmGoal: 1000,
@@ -132,7 +145,7 @@ function normalizeNamedList<T extends PracticeRoute | Manoeuvre>(
         updatedAt: isTimestamp(item.updatedAt) ? item.updatedAt : common.createdAt,
       } as T];
     }
-    return [common as T];
+    return [{ ...common, group: item.group === 1 || item.group === 2 ? item.group : undefined } as T];
   });
 }
 
