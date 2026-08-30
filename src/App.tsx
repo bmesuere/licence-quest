@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
 import { daysUntil, drivesThisWeek, durationLabel, paceStatus, routeCounts, routeMetadata } from "./metrics";
 import {
@@ -50,7 +50,10 @@ function App() {
   const [view, setView] = useState<View>("dashboard");
   const [toast, setToast] = useState("");
   const [suggestedRouteId, setSuggestedRouteId] = useState<string>();
+  const [rouletteSpinning, setRouletteSpinning] = useState(false);
+  const [rouletteRound, setRouletteRound] = useState(0);
   const [prefilledRouteId, setPrefilledRouteId] = useState<string>();
+  const rouletteTimer = useRef<number | undefined>(undefined);
 
   const applyMerged = useCallback((merged: TrackerDocument) => setTracker(saveTracker(merged)), []);
   const sync = useSync(tracker, applyMerged);
@@ -73,7 +76,10 @@ function App() {
   const counts = routeCounts(tracker);
   const suggestedRoute = tracker.routes.find((route) => route.id === suggestedRouteId);
 
+  useEffect(() => () => window.clearTimeout(rouletteTimer.current), []);
+
   function chooseRandomRoute() {
+    if (rouletteSpinning) return;
     if (tracker.routes.length === 0) {
       setView("garage");
       flash("Add your first route before spinning the route box.");
@@ -81,8 +87,13 @@ function App() {
     }
     const alternatives = tracker.routes.filter((route) => route.id !== suggestedRouteId);
     const pool = alternatives.length > 0 ? alternatives : tracker.routes;
-    const random = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
-    setSuggestedRouteId(pool[Math.floor(random * pool.length)].id);
+    setRouletteSpinning(true);
+    rouletteTimer.current = window.setTimeout(() => {
+      const random = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+      setSuggestedRouteId(pool[Math.floor(random * pool.length)].id);
+      setRouletteRound((round) => round + 1);
+      setRouletteSpinning(false);
+    }, 700);
   }
 
   function useSuggestedRoute() {
@@ -140,6 +151,8 @@ function App() {
             manoeuvreCount={manoeuvreCount}
             suggestedRoute={suggestedRoute}
             routeCount={suggestedRoute ? counts.get(suggestedRoute.id) ?? 0 : 0}
+            rouletteSpinning={rouletteSpinning}
+            rouletteRound={rouletteRound}
             onRandomRoute={chooseRandomRoute}
             onUseRoute={useSuggestedRoute}
             onViewLogbook={() => setView("logbook")}
@@ -167,7 +180,7 @@ function App() {
 
 function Dashboard({
   tracker, countdown, pace, practiceCount, manoeuvreCount, suggestedRoute, routeCount,
-  onRandomRoute, onUseRoute, onViewLogbook, onManageRoutes,
+  rouletteSpinning, rouletteRound, onRandomRoute, onUseRoute, onViewLogbook, onManageRoutes,
 }: {
   tracker: TrackerDocument;
   countdown: number;
@@ -176,6 +189,8 @@ function Dashboard({
   manoeuvreCount: number;
   suggestedRoute?: TrackerDocument["routes"][number];
   routeCount: number;
+  rouletteSpinning: boolean;
+  rouletteRound: number;
   onRandomRoute: () => void;
   onUseRoute: () => void;
   onViewLogbook: () => void;
@@ -184,7 +199,6 @@ function Dashboard({
   const practiceDone = practiceCount >= tracker.settings.weeklyPracticeGoal;
   const manoeuvreDone = manoeuvreCount >= tracker.settings.weeklyManoeuvreGoal;
   const suggestedMetadata = suggestedRoute ? routeMetadata(tracker, suggestedRoute) : undefined;
-  const suggestedMetadataText = suggestedMetadata ? routeMetadataSummary(suggestedMetadata) : undefined;
   return (
     <>
       <section className="hero">
@@ -240,16 +254,16 @@ function Dashboard({
           <p className="pace-note">{pace.onTrack ? `${Math.round(pace.deltaKm)} km ahead of pace.` : `${Math.round(Math.abs(pace.deltaKm))} km behind pace.`} Aim for <b>{Math.ceil(pace.weeklyKmNeeded)} km/week</b> from here.</p>
         </article>
 
-        <article className="panel route-card">
+        <article className={`panel route-card ${rouletteSpinning ? "is-spinning" : ""}`} aria-busy={rouletteSpinning}>
           <div className="route-art" aria-hidden="true"><span>?</span><i /><i /><i /></div>
-          <div className="route-copy">
+          <div className="route-copy" key={`${suggestedRoute?.id ?? "empty"}-${rouletteRound}`} aria-live="polite" aria-atomic="true">
             <p className="kicker">Route roulette</p>
-            <h2>{suggestedRoute ? suggestedRoute.name : "Where are we driving today?"}</h2>
-            <p>{suggestedRoute ? `You've completed this loop ${routeCount} ${routeCount === 1 ? "time" : "times"}.` : tracker.routes.length ? `${tracker.routes.length} routes are waiting in your garage.` : "Add some Google Maps loops, then let the route box decide."}</p>
-            {suggestedMetadataText && <div className="route-meta-summary">{suggestedMetadataText}</div>}
+            <h2>{rouletteSpinning ? "Shuffling the route deck…" : suggestedRoute ? suggestedRoute.name : "Where are we driving today?"}</h2>
+            <p>{rouletteSpinning ? "Mystery box spinning—your next loop is almost ready." : suggestedRoute ? `You've completed this loop ${routeCount} ${routeCount === 1 ? "time" : "times"}.` : tracker.routes.length ? `${tracker.routes.length} routes are waiting in your garage.` : "Add some Google Maps loops, then let the route box decide."}</p>
+            {!rouletteSpinning && suggestedRoute && suggestedMetadata && <RouteResultMetadata metadata={suggestedMetadata} />}
             <div className="route-actions">
-              <button className="secondary-button" type="button" onClick={onRandomRoute}><ShuffleIcon /> {suggestedRoute ? "Spin again" : "Pick a random route"}</button>
-              {suggestedRoute && <button className="text-button" type="button" onClick={onUseRoute}>Use this route</button>}
+              <button className="secondary-button" type="button" disabled={rouletteSpinning} onClick={onRandomRoute}><ShuffleIcon /> {rouletteSpinning ? "Shuffling…" : suggestedRoute ? "Spin again" : "Pick a random route"}</button>
+              {!rouletteSpinning && suggestedRoute && <button className="text-button" type="button" onClick={onUseRoute}>Use this route</button>}
               {!suggestedRoute && tracker.routes.length === 0 && <button className="text-button" type="button" onClick={onManageRoutes}>Add routes</button>}
             </div>
           </div>
@@ -257,6 +271,13 @@ function Dashboard({
       </section>
     </>
   );
+}
+
+function RouteResultMetadata({ metadata }: { metadata: ReturnType<typeof routeMetadata> }) {
+  return <dl className="route-result-meta">
+    <div><dt>Distance</dt><dd>{metadata.distanceKm === undefined ? "Not recorded" : `${metadata.distanceKm.toFixed(1)} km`}</dd>{metadata.distanceSource && <small>{metadata.distanceSource === "average" ? `Average from ${metadata.loggedDriveCount} logged ${metadata.loggedDriveCount === 1 ? "drive" : "drives"}` : "Set in Garage"}</small>}</div>
+    <div><dt>Duration</dt><dd>{metadata.durationMinutes === undefined ? "Not recorded" : durationLabel(Math.round(metadata.durationMinutes))}</dd>{metadata.durationSource && <small>{metadata.durationSource === "average" ? `Average from ${metadata.loggedDriveCount} logged ${metadata.loggedDriveCount === 1 ? "drive" : "drives"}` : "Set in Garage"}</small>}</div>
+  </dl>;
 }
 
 function Mission({ done, label, detail, color }: { done: boolean; label: string; detail: string; color: string }) {
