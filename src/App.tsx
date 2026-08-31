@@ -139,6 +139,17 @@ function App() {
     flash("Drive removed from the logbook.");
   }
 
+  function updateDrive(drive: DriveRecord) {
+    const updated = { ...drive, updatedAt: new Date().toISOString() };
+    commit({
+      ...tracker,
+      drives: tracker.drives
+        .map((item) => item.id === updated.id ? updated : item)
+        .sort((left, right) => right.date.localeCompare(left.date)),
+    });
+    flash("Drive changes saved.");
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">Skip to content</a>
@@ -187,7 +198,7 @@ function App() {
             onDismissCelebration={() => setDriveCelebration(undefined)}
           />
         )}
-        {view === "logbook" && <Logbook tracker={tracker} onDelete={deleteDrive} />}
+        {view === "logbook" && <Logbook tracker={tracker} onUpdate={updateDrive} onDelete={deleteDrive} />}
         {view === "garage" && <Garage tracker={tracker} counts={counts} skillCounts={skillCounts} onCommit={commit} flash={flash} />}
         {view === "settings" && <Settings tracker={tracker} onCommit={commit} sync={sync} flash={flash} />}
       </main>
@@ -425,8 +436,9 @@ function DriveCelebrationCard({ tracker, celebration, onDismiss }: {
   );
 }
 
-function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (drive: DriveRecord) => void }) {
+function Logbook({ tracker, onUpdate, onDelete }: { tracker: TrackerDocument; onUpdate: (drive: DriveRecord) => void; onDelete: (drive: DriveRecord) => void }) {
   const [filter, setFilter] = useState<"all" | DriveType>("all");
+  const [editingDriveId, setEditingDriveId] = useState<string>();
   const filtered = filter === "all" ? tracker.drives : tracker.drives.filter((drive) => drive.type === filter);
   const routeById = useMemo(() => new Map(tracker.routes.map((route) => [route.id, route])), [tracker.routes]);
   const manoeuvreById = useMemo(() => new Map(tracker.manoeuvres.map((manoeuvre) => [manoeuvre.id, manoeuvre])), [tracker.manoeuvres]);
@@ -441,7 +453,8 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
             .map((manoeuvreId) => manoeuvreById.get(manoeuvreId)?.name)
             .filter((name): name is string => Boolean(name));
           const practisedManoeuvres = drive.practicedManoeuvres || drive.type === "manoeuvres";
-          return <li key={drive.id} className="drive-row">
+          const editing = editingDriveId === drive.id;
+          return <li key={drive.id} className={`drive-row ${editing ? "is-editing" : ""}`}>
             <span className={`type-icon ${drive.type}`} aria-hidden="true">{drive.type === "functional" ? "↗" : drive.type === "practice" ? "★" : "↔"}</span>
             <div className="drive-main">
               <div><strong>{DRIVE_LABELS[drive.type]}</strong><time dateTime={drive.date}>{formatDate(drive.date)}</time></div>
@@ -454,12 +467,61 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
               {drive.notes && <p className="drive-notes">{drive.notes}</p>}
             </div>
             <dl><div><dt>Distance</dt><dd>{drive.distanceKm.toFixed(1)} km</dd></div><div><dt>Time</dt><dd>{durationLabel(drive.durationMinutes)}</dd></div></dl>
-            <button className="icon-button danger" type="button" onClick={() => onDelete(drive)} aria-label={`Delete ${formatDate(drive.date)} drive`}><TrashIcon /></button>
+            <div className="drive-actions">
+              <button className="icon-button" type="button" aria-expanded={editing} aria-controls={`edit-${drive.id}`} onClick={() => setEditingDriveId((current) => current === drive.id ? undefined : drive.id)} aria-label={`${editing ? "Close editor for" : "Edit"} ${DRIVE_LABELS[drive.type]} drive from ${formatDate(drive.date)}, ${drive.distanceKm.toFixed(1)} km`}><PencilIcon /></button>
+              <button className="icon-button danger" type="button" onClick={() => onDelete(drive)} aria-label={`Delete ${DRIVE_LABELS[drive.type]} drive from ${formatDate(drive.date)}, ${drive.distanceKm.toFixed(1)} km`}><TrashIcon /></button>
+            </div>
+            {editing && <DriveEditForm key={drive.updatedAt} tracker={tracker} drive={drive} onSave={(updated) => { onUpdate(updated); setEditingDriveId(undefined); }} onCancel={() => setEditingDriveId(undefined)} />}
           </li>;
         })}</ol>
       )}
     </section>
   );
+}
+
+function DriveEditForm({ tracker, drive, onSave, onCancel }: { tracker: TrackerDocument; drive: DriveRecord; onSave: (drive: DriveRecord) => void; onCancel: () => void }) {
+  const [type, setType] = useState(drive.type);
+  const [date, setDate] = useState(drive.date);
+  const [distance, setDistance] = useState(String(drive.distanceKm));
+  const [duration, setDuration] = useState(String(drive.durationMinutes));
+  const [selectedRoute, setSelectedRoute] = useState(drive.routeId ?? "");
+  const [practised, setPractised] = useState(drive.practicedManoeuvres);
+  const [manoeuvreIds, setManoeuvreIds] = useState(drive.manoeuvreIds);
+  const [notes, setNotes] = useState(drive.notes ?? "");
+  const prefix = `edit-${drive.id}`;
+  const showManoeuvres = practised || type === "manoeuvres";
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!event.currentTarget.reportValidity()) return;
+    const includesManoeuvres = practised || type === "manoeuvres";
+    onSave({
+      ...drive,
+      date,
+      distanceKm: Number(distance),
+      durationMinutes: Number(duration),
+      type,
+      routeId: type === "practice" && selectedRoute ? selectedRoute : undefined,
+      practicedManoeuvres: includesManoeuvres,
+      manoeuvreIds: includesManoeuvres ? manoeuvreIds : [],
+      notes: notes.trim() || undefined,
+    });
+  }
+
+  return <form id={prefix} className="drive-edit-form" onSubmit={submit} action="/" method="post">
+    <h2>Edit drive</h2>
+    <div className="form-grid drive-edit-grid">
+      <label htmlFor={`${prefix}-date`}><span>Date</span><input id={`${prefix}-date`} name="date" type="date" max={localDateKey()} required value={date} onChange={(event) => setDate(event.target.value)} /></label>
+      <label htmlFor={`${prefix}-type`}><span>Drive type</span><select id={`${prefix}-type`} name="drive-type" value={type} onChange={(event) => setType(event.target.value as DriveType)}>{(["functional", "practice", "manoeuvres"] as DriveType[]).map((value) => <option key={value} value={value}>{DRIVE_LABELS[value]}</option>)}</select></label>
+      <label htmlFor={`${prefix}-distance`}><span>Distance</span><span className="unit-input"><input id={`${prefix}-distance`} name="distance" type="number" inputMode="decimal" min="0.1" max="1000" step="0.1" required value={distance} onChange={(event) => setDistance(event.target.value)} /><b>km</b></span></label>
+      <label htmlFor={`${prefix}-duration`}><span>Time</span><span className="unit-input"><input id={`${prefix}-duration`} name="duration" type="number" inputMode="numeric" min="1" max="1440" step="1" required value={duration} onChange={(event) => setDuration(event.target.value)} /><b>min</b></span></label>
+      {type === "practice" && <label htmlFor={`${prefix}-route`}><span>Practice route</span><select id={`${prefix}-route`} name="route" value={selectedRoute} onChange={(event) => setSelectedRoute(event.target.value)}><option value="">No saved route</option>{tracker.routes.map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label>}
+    </div>
+    {type !== "manoeuvres" && <label className="big-check"><input name="practised-manoeuvres" type="checkbox" checked={practised} onChange={(event) => setPractised(event.target.checked)} /><span>✓</span><div><strong>This drive included manoeuvres</strong><small>Counts towards the weekly mission</small></div></label>}
+    {showManoeuvres && tracker.manoeuvres.length > 0 && <fieldset className="manoeuvre-checks"><legend>Which manoeuvres?</legend>{tracker.manoeuvres.map((manoeuvre) => <label key={manoeuvre.id}><input name="manoeuvres" type="checkbox" value={manoeuvre.id} checked={manoeuvreIds.includes(manoeuvre.id)} onChange={(event) => setManoeuvreIds((ids) => event.target.checked ? [...ids, manoeuvre.id] : ids.filter((item) => item !== manoeuvre.id))} /> <span>{manoeuvre.name}</span></label>)}</fieldset>}
+    <label className="notes-field" htmlFor={`${prefix}-notes`}><span>Notes <small>optional</small></span><textarea id={`${prefix}-notes`} name="notes" maxLength={500} rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+    <div className="drive-edit-buttons"><button className="secondary-button" type="submit">Save changes</button><button className="text-button" type="button" onClick={onCancel}>Cancel</button></div>
+  </form>;
 }
 
 function Garage({ tracker, counts, skillCounts, onCommit, flash }: { tracker: TrackerDocument; counts: Map<string, number>; skillCounts: Map<string, number>; onCommit: (tracker: TrackerDocument) => void; flash: (message: string) => void }) {
@@ -608,6 +670,7 @@ function WheelIcon() { return <Icon><circle cx="12" cy="12" r="9" /><path d="m4.
 function ArrowIcon() { return <Icon><path d="M5 12h14m-5-5 5 5-5 5" /></Icon>; }
 function ShuffleIcon() { return <Icon><path d="M4 7h3c4.5 0 5.5 10 10 10h3m-4-3 4 3-4 3M4 17h3c1.8 0 3-1.7 4.1-3.7M14 7.8C15 6.7 16 7 20 7m-3-3 3 3-3 3" /></Icon>; }
 function TrashIcon() { return <Icon><path d="M4 7h16M9 3h6l1 4H8zm-2 4 1 14h8l1-14M10 11v6m4-6v6" /></Icon>; }
+function PencilIcon() { return <Icon><path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Zm10.3-13.1 3 3M4 20h5" /></Icon>; }
 function ExternalIcon() { return <Icon><path d="M14 4h6v6m0-6-9 9M18 13v6H5V6h6" /></Icon>; }
 
 export default App;
