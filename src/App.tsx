@@ -17,6 +17,14 @@ import type { DriveRecord, DriveType, TrackerDocument } from "./types";
 
 type View = "dashboard" | "logbook" | "garage" | "settings";
 
+interface DriveCelebration {
+  drive: Omit<DriveRecord, "id" | "updatedAt">;
+  routeName?: string;
+  pace: ReturnType<typeof paceStatus>;
+  practiceCount: number;
+  manoeuvreCount: number;
+}
+
 const DRIVE_LABELS: Record<DriveType, string> = {
   functional: "Functional",
   practice: "Practice",
@@ -53,6 +61,8 @@ function App() {
   const [rouletteSpinning, setRouletteSpinning] = useState(false);
   const [rouletteRound, setRouletteRound] = useState(0);
   const [prefilledRouteId, setPrefilledRouteId] = useState<string>();
+  const [driveFormVersion, setDriveFormVersion] = useState(0);
+  const [driveCelebration, setDriveCelebration] = useState<DriveCelebration>();
   const rouletteTimer = useRef<number | undefined>(undefined);
 
   const applyMerged = useCallback((merged: TrackerDocument) => setTracker(saveTracker(merged)), []);
@@ -104,9 +114,19 @@ function App() {
 
   function saveDrive(drive: Omit<DriveRecord, "id" | "updatedAt">) {
     const stamp = new Date().toISOString();
-    commit({ ...tracker, drives: [{ ...drive, id: id("drive"), updatedAt: stamp }, ...tracker.drives] });
+    const savedDrive = { ...drive, id: id("drive"), updatedAt: stamp };
+    const nextTracker = { ...tracker, drives: [savedDrive, ...tracker.drives] };
+    const nextWeek = drivesThisWeek(nextTracker.drives);
+    setDriveCelebration({
+      drive,
+      routeName: drive.routeId ? tracker.routes.find((route) => route.id === drive.routeId)?.name : undefined,
+      pace: paceStatus(nextTracker),
+      practiceCount: nextWeek.filter((item) => item.type === "practice").length,
+      manoeuvreCount: nextWeek.filter((item) => item.practicedManoeuvres || item.type === "manoeuvres").length,
+    });
+    commit(nextTracker);
     setPrefilledRouteId(undefined);
-    flash("Drive logged — another lap closer to ready!");
+    setDriveFormVersion((version) => version + 1);
   }
 
   function deleteDrive(drive: DriveRecord) {
@@ -161,10 +181,12 @@ function App() {
         )}
         {view === "dashboard" && (
           <DriveForm
-            key={prefilledRouteId ?? "fresh"}
+            key={`${prefilledRouteId ?? "fresh"}-${driveFormVersion}`}
             tracker={tracker}
             routeId={prefilledRouteId}
             onSave={saveDrive}
+            celebration={driveCelebration}
+            onDismissCelebration={() => setDriveCelebration(undefined)}
           />
         )}
         {view === "logbook" && <Logbook tracker={tracker} onDelete={deleteDrive} />}
@@ -284,7 +306,13 @@ function Mission({ done, label, detail, color }: { done: boolean; label: string;
   return <div className={`mission ${done ? "done" : ""}`}><span className={`mission-icon ${color}`} aria-hidden="true">{done ? "✓" : "○"}</span><div><strong>{label}</strong><small>{detail}</small></div><span className="mission-state">{done ? "Cleared" : "To do"}</span></div>;
 }
 
-function DriveForm({ tracker, routeId, onSave }: { tracker: TrackerDocument; routeId?: string; onSave: (drive: Omit<DriveRecord, "id" | "updatedAt">) => void }) {
+function DriveForm({ tracker, routeId, onSave, celebration, onDismissCelebration }: {
+  tracker: TrackerDocument;
+  routeId?: string;
+  onSave: (drive: Omit<DriveRecord, "id" | "updatedAt">) => void;
+  celebration?: DriveCelebration;
+  onDismissCelebration: () => void;
+}) {
   const [type, setType] = useState<DriveType>(routeId ? "practice" : "functional");
   const [date, setDate] = useState(localDateKey());
   const [distance, setDistance] = useState("");
@@ -314,6 +342,7 @@ function DriveForm({ tracker, routeId, onSave }: { tracker: TrackerDocument; rou
   return (
     <section className="log-section" id="log-drive">
       <div className="section-heading"><p className="kicker">Pit stop</p><h2>Log a drive</h2><p>Every trip counts. Add the details while they're still fresh.</p></div>
+      {celebration && <DriveCelebrationCard tracker={tracker} celebration={celebration} onDismiss={onDismissCelebration} />}
       <form className="drive-form" onSubmit={submit} action="/" method="post">
         <fieldset className="drive-types">
           <legend>What kind of drive was it?</legend>
@@ -339,6 +368,57 @@ function DriveForm({ tracker, routeId, onSave }: { tracker: TrackerDocument; rou
         <label className="notes-field"><span>Notes <small>optional</small></span><textarea name="notes" maxLength={500} rows={3} placeholder="What went well? What needs another lap?" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         <button className="primary-button save-drive" type="submit">Save drive <FlagIcon /></button>
       </form>
+    </section>
+  );
+}
+
+function DriveCelebrationCard({ tracker, celebration, onDismiss }: {
+  tracker: TrackerDocument;
+  celebration: DriveCelebration;
+  onDismiss: () => void;
+}) {
+  const cardRef = useRef<HTMLElement>(null);
+  const { drive, routeName, pace, practiceCount, manoeuvreCount } = celebration;
+  const remainingKm = Math.max(0, tracker.settings.kmGoal - pace.totalKm);
+  const practiceDone = practiceCount >= tracker.settings.weeklyPracticeGoal;
+  const manoeuvreDone = manoeuvreCount >= tracker.settings.weeklyManoeuvreGoal;
+  const driveName = routeName ?? `${DRIVE_LABELS[drive.type]} drive`;
+  const paceMessage = Math.abs(pace.deltaKm) < 1
+    ? "Right on target pace."
+    : pace.onTrack
+      ? `${Math.round(pace.deltaKm)} km ahead of pace.`
+      : `${Math.round(Math.abs(pace.deltaKm))} km behind pace — keep rolling.`;
+
+  useEffect(() => {
+    cardRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "center",
+    });
+  }, []);
+
+  return (
+    <section ref={cardRef} className="drive-celebration" role="status" aria-label="Drive saved">
+      <div className="celebration-confetti" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+      <button className="celebration-close" type="button" onClick={onDismiss} aria-label="Dismiss drive recap">×</button>
+      <div className="celebration-heading">
+        <span className="celebration-flag" aria-hidden="true"><FlagIcon /></span>
+        <div><p className="kicker">Lap complete</p><h3>Drive logged!</h3><p>{driveName} is safely in your logbook.</p></div>
+      </div>
+      <dl className="celebration-stats">
+        <div><dt>Added</dt><dd>+{drive.distanceKm.toFixed(1)} km</dd></div>
+        <div><dt>Time</dt><dd>{durationLabel(drive.durationMinutes)}</dd></div>
+        <div><dt>Quest</dt><dd>{Math.round(pace.totalKm)} / {tracker.settings.kmGoal} km</dd></div>
+      </dl>
+      <div className="celebration-progress" aria-label={`${Math.round(pace.percent)}% of distance goal complete`}>
+        <span style={{ "--progress": `${pace.percent}%` } as React.CSSProperties} />
+      </div>
+      <div className="celebration-impact">
+        <p><strong>{Math.round(pace.percent)}% complete</strong><span>{remainingKm > 0 ? `${Math.round(remainingKm)} km to go` : "Distance goal cleared!"} · {paceMessage}</span></p>
+        <div className="celebration-missions" aria-label="This week's missions">
+          <span className={practiceDone ? "done" : ""}>{practiceDone ? "✓" : "○"} Practice {practiceCount}/{tracker.settings.weeklyPracticeGoal}</span>
+          <span className={manoeuvreDone ? "done" : ""}>{manoeuvreDone ? "✓" : "○"} Manoeuvres {manoeuvreCount}/{tracker.settings.weeklyManoeuvreGoal}</span>
+        </div>
+      </div>
     </section>
   );
 }
@@ -499,7 +579,7 @@ function HomeIcon() { return <Icon><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-
 function FlagIcon() { return <Icon><path d="M5 21V3m1 1h11l-2.2 3L17 10H6" /></Icon>; }
 function MapIcon() { return <Icon><path d="m3 6 5-2 8 3 5-2v13l-5 2-8-3-5 2zm5-2v13m8-10v13" /></Icon>; }
 function CogIcon() { return <Icon><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.5a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" /><circle cx="12" cy="12" r="3" /></Icon>; }
-function WheelIcon() { return <Icon><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 3v6m0 6v6M3 12h6m6 0h6" /></Icon>; }
+function WheelIcon() { return <Icon><circle cx="12" cy="12" r="9" /><path d="m4.5 8.8 4.6 2.5m10.4-2.5-4.6 2.5M12 15v6" /><circle cx="12" cy="12.5" r="3" /><path className="wheel-marker" d="M12 3v2.2" /></Icon>; }
 function ArrowIcon() { return <Icon><path d="M5 12h14m-5-5 5 5-5 5" /></Icon>; }
 function ShuffleIcon() { return <Icon><path d="M4 7h3c4.5 0 5.5 10 10 10h3m-4-3 4 3-4 3M4 17h3c1.8 0 3-1.7 4.1-3.7M14 7.8C15 6.7 16 7 20 7m-3-3 3 3-3 3" /></Icon>; }
 function TrashIcon() { return <Icon><path d="M4 7h16M9 3h6l1 4H8zm-2 4 1 14h8l1-14M10 11v6m4-6v6" /></Icon>; }
