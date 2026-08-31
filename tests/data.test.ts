@@ -13,6 +13,7 @@ describe("tracker data", () => {
     expect(tracker.settings).toMatchObject({
       examDate: "2027-01-19",
       kmGoal: 1000,
+      weeklyDriveGoal: 2,
       weeklyPracticeGoal: 1,
       weeklyManoeuvreGoal: 1,
     });
@@ -25,6 +26,13 @@ describe("tracker data", () => {
       "Reversing in a straight line",
       "Turning around in a narrow street",
     ]);
+  });
+
+  it("adds the weekly drive target to older saved data", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-30T12:00:00Z"));
+    const { weeklyDriveGoal: _oldMissingField, ...legacySettings } = tracker.settings;
+    const normalized = normalizeTracker({ ...tracker, settings: legacySettings });
+    expect(normalized.settings.weeklyDriveGoal).toBe(2);
   });
 
   it("drops malformed drives while keeping valid records", () => {

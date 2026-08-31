@@ -84,7 +84,7 @@ main { outline: none; }
 .trophy, .meter-icon { width: 2.8rem; aspect-ratio: 1; border-radius: .85rem; display: grid; place-items: center; font-size: 1.45rem; background: var(--orange-pale); color: #d56a2e; transform: rotate(4deg); }
 .meter-icon { background: var(--purple-pale); color: var(--purple); }
 .mission { min-height: 3.7rem; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .8rem; padding: .7rem; border-radius: .9rem; background: #f8f7fb; margin-block-end: .55rem; }
-.mission-icon { width: 2.35rem; aspect-ratio: 1; border-radius: .75rem; display: grid; place-items: center; color: white; font-size: 1.15rem; font-weight: 900; }.mission-icon.purple{background:#8168f4}.mission-icon.orange{background:#ff9b5a}
+.mission-icon { width: 2.35rem; aspect-ratio: 1; border-radius: .75rem; display: grid; place-items: center; color: white; font-size: 1.15rem; font-weight: 900; }.mission-icon.green{background:#45b77d}.mission-icon.purple{background:#8168f4}.mission-icon.orange{background:#ff9b5a}
 .mission strong, .mission small { display: block; }.mission strong { font-size: .9rem; }.mission small { color: var(--muted); margin-block-start: .15rem; font-size: .74rem; }
 .mission-state { font-size: .7rem; font-weight: 850; color: var(--muted); background: white; border: 1px solid var(--line); border-radius: 999px; padding: .3rem .55rem; }
 .mission.done .mission-state { color: #21734d; background: var(--green-pale); border-color: #b9ecd7; }

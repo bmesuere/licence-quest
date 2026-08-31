@@ -52,6 +52,7 @@ export function createDefaultTracker(now = new Date()): TrackerDocument {
     settings: {
       examDate: nextExamDate(now),
       kmGoal: 1000,
+      weeklyDriveGoal: 2,
       weeklyPracticeGoal: 1,
       weeklyManoeuvreGoal: 1,
     },
@@ -176,6 +177,7 @@ export function normalizeTracker(value: unknown): TrackerDocument {
     settings: {
       examDate: isDateKey(settings.examDate) ? settings.examDate : nextExamDate(),
       kmGoal: isFiniteNumber(settings.kmGoal) && settings.kmGoal > 0 ? settings.kmGoal : 1000,
+      weeklyDriveGoal: isFiniteNumber(settings.weeklyDriveGoal) && settings.weeklyDriveGoal >= 0 ? Math.round(settings.weeklyDriveGoal) : 2,
       weeklyPracticeGoal: isFiniteNumber(settings.weeklyPracticeGoal) && settings.weeklyPracticeGoal >= 0 ? Math.round(settings.weeklyPracticeGoal) : 1,
       weeklyManoeuvreGoal: isFiniteNumber(settings.weeklyManoeuvreGoal) && settings.weeklyManoeuvreGoal >= 0 ? Math.round(settings.weeklyManoeuvreGoal) : 1,
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultTracker } from "../src/data";
-import { daysUntil, drivesThisWeek, manoeuvreCounts, paceStatus, routeCounts, routeMetadata, weekStartKey } from "../src/metrics";
+import { daysUntil, drivesThisWeek, manoeuvreCounts, paceStatus, routeCounts, routeMetadata, weeklyMissionProgress, weekStartKey } from "../src/metrics";
 import type { DriveRecord } from "../src/types";
 
 function drive(date: string, distanceKm = 20): DriveRecord {
@@ -40,6 +40,22 @@ describe("kilometre pace", () => {
     expect(status.totalKm).toBe(60);
     expect(status.onTrack).toBe(true);
     expect(status.deltaKm).toBeCloseTo(10);
+  });
+});
+
+describe("weekly cup", () => {
+  it("requires a saved loop for practice progress and counts manoeuvres on any drive type", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    tracker.drives = [
+      { ...drive("2026-08-25"), id: "practice-without-loop", type: "practice" },
+      { ...drive("2026-08-26"), id: "functional-with-skills", type: "functional", practicedManoeuvres: true },
+      { ...drive("2026-08-27"), id: "practice-with-loop", type: "practice", routeId: "route-a" },
+    ];
+    expect(weeklyMissionProgress(tracker, new Date(2026, 7, 30, 12))).toEqual({
+      driveCount: 3,
+      practiceLoopCount: 1,
+      manoeuvreSessionCount: 1,
+    });
   });
 });
 

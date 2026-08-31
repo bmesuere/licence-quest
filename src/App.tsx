@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFlandersManoeuvres, loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
-import { daysUntil, drivesThisWeek, durationLabel, manoeuvreCounts, paceStatus, routeCounts, routeMetadata } from "./metrics";
+import { daysUntil, durationLabel, manoeuvreCounts, paceStatus, routeCounts, routeMetadata, weeklyMissionProgress } from "./metrics";
 import {
   forgetSyncCode,
   formatSyncCode,
@@ -21,8 +21,9 @@ interface DriveCelebration {
   drive: Omit<DriveRecord, "id" | "updatedAt">;
   routeName?: string;
   pace: ReturnType<typeof paceStatus>;
-  practiceCount: number;
-  manoeuvreCount: number;
+  driveCount: number;
+  practiceLoopCount: number;
+  manoeuvreSessionCount: number;
 }
 
 const DRIVE_LABELS: Record<DriveType, string> = {
@@ -78,9 +79,7 @@ function App() {
     window.setTimeout(() => setToast((current) => current === message ? "" : current), 3600);
   };
 
-  const week = drivesThisWeek(tracker.drives);
-  const practiceCount = week.filter((drive) => drive.type === "practice").length;
-  const manoeuvreCount = week.filter((drive) => drive.practicedManoeuvres || drive.type === "manoeuvres").length;
+  const weeklyProgress = weeklyMissionProgress(tracker);
   const pace = paceStatus(tracker);
   const countdown = daysUntil(tracker.settings.examDate);
   const counts = routeCounts(tracker);
@@ -117,13 +116,12 @@ function App() {
     const stamp = new Date().toISOString();
     const savedDrive = { ...drive, id: id("drive"), updatedAt: stamp };
     const nextTracker = { ...tracker, drives: [savedDrive, ...tracker.drives] };
-    const nextWeek = drivesThisWeek(nextTracker.drives);
+    const nextWeeklyProgress = weeklyMissionProgress(nextTracker);
     setDriveCelebration({
       drive,
       routeName: drive.routeId ? tracker.routes.find((route) => route.id === drive.routeId)?.name : undefined,
       pace: paceStatus(nextTracker),
-      practiceCount: nextWeek.filter((item) => item.type === "practice").length,
-      manoeuvreCount: nextWeek.filter((item) => item.practicedManoeuvres || item.type === "manoeuvres").length,
+      ...nextWeeklyProgress,
     });
     commit(nextTracker);
     setPrefilledRouteId(undefined);
@@ -168,8 +166,7 @@ function App() {
             tracker={tracker}
             countdown={countdown}
             pace={pace}
-            practiceCount={practiceCount}
-            manoeuvreCount={manoeuvreCount}
+            weeklyProgress={weeklyProgress}
             suggestedRoute={suggestedRoute}
             routeCount={suggestedRoute ? counts.get(suggestedRoute.id) ?? 0 : 0}
             rouletteSpinning={rouletteSpinning}
@@ -202,14 +199,13 @@ function App() {
 }
 
 function Dashboard({
-  tracker, countdown, pace, practiceCount, manoeuvreCount, suggestedRoute, routeCount,
+  tracker, countdown, pace, weeklyProgress, suggestedRoute, routeCount,
   rouletteSpinning, rouletteRound, onRandomRoute, onUseRoute, onViewLogbook, onManageRoutes,
 }: {
   tracker: TrackerDocument;
   countdown: number;
   pace: ReturnType<typeof paceStatus>;
-  practiceCount: number;
-  manoeuvreCount: number;
+  weeklyProgress: ReturnType<typeof weeklyMissionProgress>;
   suggestedRoute?: TrackerDocument["routes"][number];
   routeCount: number;
   rouletteSpinning: boolean;
@@ -219,8 +215,10 @@ function Dashboard({
   onViewLogbook: () => void;
   onManageRoutes: () => void;
 }) {
-  const practiceDone = practiceCount >= tracker.settings.weeklyPracticeGoal;
-  const manoeuvreDone = manoeuvreCount >= tracker.settings.weeklyManoeuvreGoal;
+  const drivesDone = weeklyProgress.driveCount >= tracker.settings.weeklyDriveGoal;
+  const practiceDone = weeklyProgress.practiceLoopCount >= tracker.settings.weeklyPracticeGoal;
+  const manoeuvreDone = weeklyProgress.manoeuvreSessionCount >= tracker.settings.weeklyManoeuvreGoal;
+  const cupComplete = drivesDone && practiceDone && manoeuvreDone;
   const suggestedMetadata = suggestedRoute ? routeMetadata(tracker, suggestedRoute) : undefined;
   return (
     <>
@@ -260,10 +258,11 @@ function Dashboard({
       <section className="dashboard-grid" aria-label="Training overview">
         <article className="panel weekly-card">
           <div className="panel-title"><div><p className="kicker">Weekly cup</p><h2>This week's missions</h2></div><span className="trophy" aria-hidden="true">♛</span></div>
-          <Mission done={practiceDone} label="Practice drive" detail={`${practiceCount} of ${tracker.settings.weeklyPracticeGoal} complete`} color="purple" />
-          <Mission done={manoeuvreDone} label="Manoeuvres session" detail={`${manoeuvreCount} of ${tracker.settings.weeklyManoeuvreGoal} complete`} color="orange" />
-          <div className={`week-status ${practiceDone && manoeuvreDone ? "complete" : ""}`}>
-            {practiceDone && manoeuvreDone ? "Weekly cup cleared!" : "Clear both missions to win this week's cup."}
+          <Mission done={drivesDone} label="Drives of any type" detail={`${weeklyProgress.driveCount} of ${tracker.settings.weeklyDriveGoal} complete`} color="green" />
+          <Mission done={practiceDone} label="Practice drive on a loop" detail={`${weeklyProgress.practiceLoopCount} of ${tracker.settings.weeklyPracticeGoal} complete`} color="purple" />
+          <Mission done={manoeuvreDone} label="Session with manoeuvres" detail={`${weeklyProgress.manoeuvreSessionCount} of ${tracker.settings.weeklyManoeuvreGoal} complete`} color="orange" />
+          <div className={`week-status ${cupComplete ? "complete" : ""}`}>
+            {cupComplete ? "Weekly cup cleared!" : "Clear all three missions to win this week's cup."}
           </div>
         </article>
 
@@ -379,10 +378,11 @@ function DriveCelebrationCard({ tracker, celebration, onDismiss }: {
   onDismiss: () => void;
 }) {
   const cardRef = useRef<HTMLElement>(null);
-  const { drive, routeName, pace, practiceCount, manoeuvreCount } = celebration;
+  const { drive, routeName, pace, driveCount, practiceLoopCount, manoeuvreSessionCount } = celebration;
   const remainingKm = Math.max(0, tracker.settings.kmGoal - pace.totalKm);
-  const practiceDone = practiceCount >= tracker.settings.weeklyPracticeGoal;
-  const manoeuvreDone = manoeuvreCount >= tracker.settings.weeklyManoeuvreGoal;
+  const drivesDone = driveCount >= tracker.settings.weeklyDriveGoal;
+  const practiceDone = practiceLoopCount >= tracker.settings.weeklyPracticeGoal;
+  const manoeuvreDone = manoeuvreSessionCount >= tracker.settings.weeklyManoeuvreGoal;
   const driveName = routeName ?? `${DRIVE_LABELS[drive.type]} drive`;
   const paceMessage = Math.abs(pace.deltaKm) < 1
     ? "Right on target pace."
@@ -416,8 +416,9 @@ function DriveCelebrationCard({ tracker, celebration, onDismiss }: {
       <div className="celebration-impact">
         <p><strong>{Math.round(pace.percent)}% complete</strong><span>{remainingKm > 0 ? `${Math.round(remainingKm)} km to go` : "Distance goal cleared!"} · {paceMessage}</span></p>
         <div className="celebration-missions" aria-label="This week's missions">
-          <span className={practiceDone ? "done" : ""}>{practiceDone ? "✓" : "○"} Practice {practiceCount}/{tracker.settings.weeklyPracticeGoal}</span>
-          <span className={manoeuvreDone ? "done" : ""}>{manoeuvreDone ? "✓" : "○"} Manoeuvres {manoeuvreCount}/{tracker.settings.weeklyManoeuvreGoal}</span>
+          <span className={drivesDone ? "done" : ""}>{drivesDone ? "✓" : "○"} Drives {driveCount}/{tracker.settings.weeklyDriveGoal}</span>
+          <span className={practiceDone ? "done" : ""}>{practiceDone ? "✓" : "○"} Practice loop {practiceLoopCount}/{tracker.settings.weeklyPracticeGoal}</span>
+          <span className={manoeuvreDone ? "done" : ""}>{manoeuvreDone ? "✓" : "○"} Manoeuvres {manoeuvreSessionCount}/{tracker.settings.weeklyManoeuvreGoal}</span>
         </div>
       </div>
     </section>
@@ -558,6 +559,7 @@ function RouteEditForm({ route, onSave, onCancel }: { route: TrackerDocument["ro
 function Settings({ tracker, onCommit, sync, flash }: { tracker: TrackerDocument; onCommit: (tracker: TrackerDocument) => void; sync: ReturnType<typeof useSync>; flash: (message: string) => void }) {
   const [examDate, setExamDate] = useState(tracker.settings.examDate);
   const [kmGoal, setKmGoal] = useState(String(tracker.settings.kmGoal));
+  const [driveGoal, setDriveGoal] = useState(String(tracker.settings.weeklyDriveGoal));
   const [practiceGoal, setPracticeGoal] = useState(String(tracker.settings.weeklyPracticeGoal));
   const [manoeuvreGoal, setManoeuvreGoal] = useState(String(tracker.settings.weeklyManoeuvreGoal));
   const [codeDraft, setCodeDraft] = useState(() => storedSyncCode() ? formatSyncCode(storedSyncCode()!) : "");
@@ -565,7 +567,7 @@ function Settings({ tracker, onCommit, sync, flash }: { tracker: TrackerDocument
 
   function saveSettings(event: FormEvent) {
     event.preventDefault();
-    onCommit({ ...tracker, settings: { examDate, kmGoal: Number(kmGoal), weeklyPracticeGoal: Number(practiceGoal), weeklyManoeuvreGoal: Number(manoeuvreGoal) } });
+    onCommit({ ...tracker, settings: { examDate, kmGoal: Number(kmGoal), weeklyDriveGoal: Number(driveGoal), weeklyPracticeGoal: Number(practiceGoal), weeklyManoeuvreGoal: Number(manoeuvreGoal) } });
     flash("Race settings saved.");
   }
   function connectSync(event: FormEvent) {
@@ -585,7 +587,7 @@ function Settings({ tracker, onCommit, sync, flash }: { tracker: TrackerDocument
   }
   return <section className="page-view"><div className="page-hero settings-hero"><div><p className="kicker">Control room</p><h1>Race settings</h1><p>Tune the finish line, goals, and data setup.</p></div><span aria-hidden="true"><CogIcon /></span></div>
     <div className="settings-grid">
-      <form className="panel settings-panel" onSubmit={saveSettings} action="/" method="post"><div className="panel-title"><div><p className="kicker">Your quest</p><h2>Goals & schedule</h2></div></div><div className="form-grid"><label><span>Practical exam date</span><input type="date" required value={examDate} onChange={(e) => setExamDate(e.target.value)} /></label><label><span>Kilometre goal</span><span className="unit-input"><input type="number" min="1" max="100000" step="1" required value={kmGoal} onChange={(e) => setKmGoal(e.target.value)} /><b>km</b></span></label><label><span>Practice drives each week</span><input type="number" min="0" max="14" required value={practiceGoal} onChange={(e) => setPracticeGoal(e.target.value)} /></label><label><span>Manoeuvre sessions each week</span><input type="number" min="0" max="14" required value={manoeuvreGoal} onChange={(e) => setManoeuvreGoal(e.target.value)} /></label></div><button className="primary-button" type="submit">Save settings</button></form>
+      <form className="panel settings-panel" onSubmit={saveSettings} action="/" method="post"><div className="panel-title"><div><p className="kicker">Your quest</p><h2>Goals & schedule</h2></div></div><div className="form-grid"><label><span>Practical exam date</span><input type="date" required value={examDate} onChange={(e) => setExamDate(e.target.value)} /></label><label><span>Kilometre goal</span><span className="unit-input"><input type="number" min="1" max="100000" step="1" required value={kmGoal} onChange={(e) => setKmGoal(e.target.value)} /><b>km</b></span></label><label><span>Drives of any type each week</span><input type="number" min="0" max="14" required value={driveGoal} onChange={(e) => setDriveGoal(e.target.value)} /></label><label><span>Practice loops each week</span><input type="number" min="0" max="14" required value={practiceGoal} onChange={(e) => setPracticeGoal(e.target.value)} /></label><label><span>Manoeuvre sessions each week</span><input type="number" min="0" max="14" required value={manoeuvreGoal} onChange={(e) => setManoeuvreGoal(e.target.value)} /></label></div><button className="primary-button" type="submit">Save settings</button></form>
       <section className="panel settings-panel"><div className="panel-title"><div><p className="kicker">Cloud save</p><h2>Cloudflare sync</h2></div><span className={`cloud-status ${sync.state}`} aria-hidden="true">●</span></div>
         {!syncAvailable() ? <p className="muted">Sync is not included in this build. Set <code>VITE_SYNC_ENDPOINT</code> when building to connect the Cloudflare Worker.</p> : <><p className="muted">Use the same private code on each device. Cloud sync stores your driving data as readable JSON, so keep this code safe.</p><form className="stack-form" onSubmit={connectSync} action="/" method="post"><label><span>Private sync code</span><textarea className="code-field" rows={2} spellCheck={false} value={codeDraft} onChange={(e) => setCodeDraft(e.target.value)} /></label><div className="button-row"><button className="secondary-button" type="button" onClick={newCode}>Generate code</button><button className="primary-button compact-button" type="submit">Save & sync</button></div></form>{storedSyncCode() && <button className="danger-link" type="button" onClick={() => { forgetSyncCode(); sync.refresh(); setCodeDraft(""); setStorageMessage("This device is disconnected. Cloud data was not deleted."); }}>Disconnect this device</button>}<p className="sync-detail">Status: {sync.message || sync.state}{lastSyncTime() ? ` · Last success ${new Date(lastSyncTime()!).toLocaleString("en-GB")}` : ""}</p></>}
       </section>

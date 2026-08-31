@@ -24,6 +24,15 @@ export function drivesThisWeek(drives: DriveRecord[], now = new Date()): DriveRe
   return drives.filter((drive) => drive.date >= start && drive.date <= localDateKey(now));
 }
 
+export function weeklyMissionProgress(tracker: TrackerDocument, now = new Date()) {
+  const drives = drivesThisWeek(tracker.drives, now);
+  return {
+    driveCount: drives.length,
+    practiceLoopCount: drives.filter((drive) => drive.type === "practice" && Boolean(drive.routeId)).length,
+    manoeuvreSessionCount: drives.filter((drive) => drive.practicedManoeuvres || drive.type === "manoeuvres").length,
+  };
+}
+
 export function totalKm(drives: DriveRecord[]): number {
   return drives.reduce((sum, drive) => sum + drive.distanceKm, 0);
 }

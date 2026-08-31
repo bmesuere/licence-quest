@@ -33,6 +33,7 @@ export interface Manoeuvre {
 export interface TrackerSettings {
   examDate: string;
   kmGoal: number;
+  weeklyDriveGoal: number;
   weeklyPracticeGoal: number;
   weeklyManoeuvreGoal: number;
 }
