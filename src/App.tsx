@@ -427,6 +427,7 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
   const [filter, setFilter] = useState<"all" | DriveType>("all");
   const filtered = filter === "all" ? tracker.drives : tracker.drives.filter((drive) => drive.type === filter);
   const routeById = useMemo(() => new Map(tracker.routes.map((route) => [route.id, route])), [tracker.routes]);
+  const manoeuvreById = useMemo(() => new Map(tracker.manoeuvres.map((manoeuvre) => [manoeuvre.id, manoeuvre])), [tracker.manoeuvres]);
   return (
     <section className="page-view">
       <div className="page-hero"><div><p className="kicker">Race history</p><h1>Your logbook</h1><p>Every kilometre, mission, and skill session in one place.</p></div><span aria-hidden="true"><FlagIcon /></span></div>
@@ -434,7 +435,25 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
       {filtered.length === 0 ? <EmptyState icon="◇" title="No drives on this track yet" text="Log a drive from Home and it will appear here." /> : (
         <ol className="drive-list">{filtered.map((drive) => {
           const route = drive.routeId ? routeById.get(drive.routeId) : undefined;
-          return <li key={drive.id} className="drive-row"><span className={`type-icon ${drive.type}`} aria-hidden="true">{drive.type === "functional" ? "↗" : drive.type === "practice" ? "★" : "↔"}</span><div className="drive-main"><div><strong>{DRIVE_LABELS[drive.type]}</strong><time dateTime={drive.date}>{formatDate(drive.date)}</time></div><p>{route ? route.name : drive.practicedManoeuvres ? "Manoeuvres practised" : "No route attached"}{drive.notes ? ` · ${drive.notes}` : ""}</p></div><dl><div><dt>Distance</dt><dd>{drive.distanceKm.toFixed(1)} km</dd></div><div><dt>Time</dt><dd>{durationLabel(drive.durationMinutes)}</dd></div></dl><button className="icon-button danger" type="button" onClick={() => onDelete(drive)} aria-label={`Delete ${formatDate(drive.date)} drive`}><TrashIcon /></button></li>;
+          const manoeuvreNames = drive.manoeuvreIds
+            .map((manoeuvreId) => manoeuvreById.get(manoeuvreId)?.name)
+            .filter((name): name is string => Boolean(name));
+          const practisedManoeuvres = drive.practicedManoeuvres || drive.type === "manoeuvres";
+          return <li key={drive.id} className="drive-row">
+            <span className={`type-icon ${drive.type}`} aria-hidden="true">{drive.type === "functional" ? "↗" : drive.type === "practice" ? "★" : "↔"}</span>
+            <div className="drive-main">
+              <div><strong>{DRIVE_LABELS[drive.type]}</strong><time dateTime={drive.date}>{formatDate(drive.date)}</time></div>
+              <div className="drive-context">
+                {route && <span className="route-tag">★ {route.name}</span>}
+                {practisedManoeuvres && <span className="manoeuvre-tag">↔ Manoeuvres practised</span>}
+                {!route && !practisedManoeuvres && <span className="drive-context-empty">No route attached</span>}
+              </div>
+              {manoeuvreNames.length > 0 && <ul className="logged-manoeuvres" aria-label="Manoeuvres practised">{manoeuvreNames.map((name) => <li key={name}>{name}</li>)}</ul>}
+              {drive.notes && <p className="drive-notes">{drive.notes}</p>}
+            </div>
+            <dl><div><dt>Distance</dt><dd>{drive.distanceKm.toFixed(1)} km</dd></div><div><dt>Time</dt><dd>{durationLabel(drive.durationMinutes)}</dd></div></dl>
+            <button className="icon-button danger" type="button" onClick={() => onDelete(drive)} aria-label={`Delete ${formatDate(drive.date)} drive`}><TrashIcon /></button>
+          </li>;
         })}</ol>
       )}
     </section>
