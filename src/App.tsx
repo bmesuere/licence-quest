@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFlandersManoeuvres, loadTracker, localDateKey, normalizeTracker, saveTracker, trackerToJson } from "./data";
-import { daysUntil, drivesThisWeek, durationLabel, paceStatus, routeCounts, routeMetadata } from "./metrics";
+import { daysUntil, drivesThisWeek, durationLabel, manoeuvreCounts, paceStatus, routeCounts, routeMetadata } from "./metrics";
 import {
   forgetSyncCode,
   formatSyncCode,
@@ -84,6 +84,7 @@ function App() {
   const pace = paceStatus(tracker);
   const countdown = daysUntil(tracker.settings.examDate);
   const counts = routeCounts(tracker);
+  const skillCounts = manoeuvreCounts(tracker);
   const suggestedRoute = tracker.routes.find((route) => route.id === suggestedRouteId);
 
   useEffect(() => () => window.clearTimeout(rouletteTimer.current), []);
@@ -190,7 +191,7 @@ function App() {
           />
         )}
         {view === "logbook" && <Logbook tracker={tracker} onDelete={deleteDrive} />}
-        {view === "garage" && <Garage tracker={tracker} counts={counts} onCommit={commit} flash={flash} />}
+        {view === "garage" && <Garage tracker={tracker} counts={counts} skillCounts={skillCounts} onCommit={commit} flash={flash} />}
         {view === "settings" && <Settings tracker={tracker} onCommit={commit} sync={sync} flash={flash} />}
       </main>
 
@@ -460,7 +461,7 @@ function Logbook({ tracker, onDelete }: { tracker: TrackerDocument; onDelete: (d
   );
 }
 
-function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument; counts: Map<string, number>; onCommit: (tracker: TrackerDocument) => void; flash: (message: string) => void }) {
+function Garage({ tracker, counts, skillCounts, onCommit, flash }: { tracker: TrackerDocument; counts: Map<string, number>; skillCounts: Map<string, number>; onCommit: (tracker: TrackerDocument) => void; flash: (message: string) => void }) {
   const [routeName, setRouteName] = useState("");
   const [routeUrl, setRouteUrl] = useState("");
   const [routePriorCompletions, setRoutePriorCompletions] = useState("0");
@@ -521,7 +522,10 @@ function Garage({ tracker, counts, onCommit, flash }: { tracker: TrackerDocument
       </section>
       <section className="panel manage-panel"><div className="panel-title"><div><p className="kicker">Skill deck</p><h2>Manoeuvres</h2></div><span className="count-badge orange">{tracker.manoeuvres.length}</span></div>
         <form className="inline-form" onSubmit={addManoeuvre} action="/" method="post"><label><span>Manoeuvre name</span><input required maxLength={100} placeholder="e.g. Parallel parking" value={manoeuvreName} onChange={(e) => setManoeuvreName(e.target.value)} /></label><button className="secondary-button" type="submit">+ Add</button></form>
-        {tracker.manoeuvres.length === 0 ? <div className="preset-empty"><EmptyState icon="↔" title="No skills configured" text="Add the standard Flanders practical-exam set or enter manoeuvres one by one." /><button className="secondary-button" type="button" onClick={addFlandersSet}>+ Add Flanders exam set</button></div> : <ul className="manage-list compact">{tracker.manoeuvres.map((manoeuvre) => <li key={manoeuvre.id}><span className="skill-dot" aria-hidden="true">✓</span><div><strong>{manoeuvre.name}</strong></div><button className="icon-button danger" type="button" aria-label={`Delete ${manoeuvre.name}`} onClick={() => onCommit({ ...tracker, manoeuvres: tracker.manoeuvres.filter((item) => item.id !== manoeuvre.id) })}><TrashIcon /></button></li>)}</ul>}
+        {tracker.manoeuvres.length === 0 ? <div className="preset-empty"><EmptyState icon="↔" title="No skills configured" text="Add the standard Flanders practical-exam set or enter manoeuvres one by one." /><button className="secondary-button" type="button" onClick={addFlandersSet}>+ Add Flanders exam set</button></div> : <ul className="manage-list compact">{tracker.manoeuvres.map((manoeuvre) => {
+          const practisedCount = skillCounts.get(manoeuvre.id) ?? 0;
+          return <li key={manoeuvre.id}><span className="skill-dot" aria-hidden="true">{practisedCount}</span><div><strong>{manoeuvre.name}</strong><small>{practisedCount === 0 ? "Not practised yet" : practisedCount === 1 ? "Practised once" : `Practised ${practisedCount} times`}</small></div><button className="icon-button danger" type="button" aria-label={`Delete ${manoeuvre.name}`} onClick={() => onCommit({ ...tracker, manoeuvres: tracker.manoeuvres.filter((item) => item.id !== manoeuvre.id) })}><TrashIcon /></button></li>;
+        })}</ul>}
       </section>
     </div>
   </section>;

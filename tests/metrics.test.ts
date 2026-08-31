@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultTracker } from "../src/data";
-import { daysUntil, drivesThisWeek, paceStatus, routeCounts, routeMetadata, weekStartKey } from "../src/metrics";
+import { daysUntil, drivesThisWeek, manoeuvreCounts, paceStatus, routeCounts, routeMetadata, weekStartKey } from "../src/metrics";
 import type { DriveRecord } from "../src/types";
 
 function drive(date: string, distanceKm = 20): DriveRecord {
@@ -63,5 +63,20 @@ describe("route progress and metadata", () => {
       { ...drive("2026-08-21", 18), id: "two", routeId: "route-a", durationMinutes: 50 },
     ];
     expect(routeMetadata(tracker, route)).toMatchObject({ distanceKm: 15, distanceSource: "manual", durationMinutes: 40, durationSource: "average", loggedDriveCount: 2 });
+  });
+});
+
+describe("manoeuvre progress", () => {
+  it("counts each selected manoeuvre once per logged drive", () => {
+    const tracker = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    const [parallel, reverse] = tracker.manoeuvres;
+    tracker.drives = [
+      { ...drive("2026-08-20"), id: "one", practicedManoeuvres: true, manoeuvreIds: [parallel.id, reverse.id] },
+      { ...drive("2026-08-21"), id: "two", practicedManoeuvres: true, manoeuvreIds: [parallel.id, parallel.id] },
+    ];
+    const counts = manoeuvreCounts(tracker);
+    expect(counts.get(parallel.id)).toBe(2);
+    expect(counts.get(reverse.id)).toBe(1);
+    expect(counts.get(tracker.manoeuvres[2].id)).toBe(0);
   });
 });

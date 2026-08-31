@@ -36,6 +36,16 @@ export function routeCounts(tracker: TrackerDocument): Map<string, number> {
   return counts;
 }
 
+export function manoeuvreCounts(tracker: TrackerDocument): Map<string, number> {
+  const counts = new Map(tracker.manoeuvres.map((manoeuvre) => [manoeuvre.id, 0]));
+  for (const drive of tracker.drives) {
+    for (const manoeuvreId of new Set(drive.manoeuvreIds)) {
+      counts.set(manoeuvreId, (counts.get(manoeuvreId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export interface RouteMetadata {
   distanceKm?: number;
   durationMinutes?: number;
