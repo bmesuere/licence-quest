@@ -24,6 +24,7 @@ export function useSync(tracker: TrackerDocument, onMerged: (tracker: TrackerDoc
   const [state, setState] = useState<SyncState>(syncConfigured() ? "idle" : "disabled");
   const [message, setMessage] = useState("");
   const running = useRef(false);
+  const pending = useRef(false);
   const timer = useRef<number | undefined>(undefined);
   const latest = useRef(tracker);
   latest.current = tracker;
@@ -35,7 +36,8 @@ export function useSync(tracker: TrackerDocument, onMerged: (tracker: TrackerDoc
 
   const run = useCallback(async (current: TrackerDocument) => {
     const code = storedSyncCode();
-    if (!syncAvailable() || !code || running.current) return;
+    if (!syncAvailable() || !code) return;
+    if (running.current) { pending.current = true; return; }
     running.current = true;
     setState("syncing");
     try {
@@ -56,7 +58,14 @@ export function useSync(tracker: TrackerDocument, onMerged: (tracker: TrackerDoc
         setState("error");
         setMessage(error instanceof Error ? error.message : "Sync failed.");
       }
-    } finally { running.current = false; }
+    } finally {
+      running.current = false;
+      // A change made mid-sync must still reach the server.
+      if (pending.current) {
+        pending.current = false;
+        void run(latest.current);
+      }
+    }
   }, [onMerged]);
 
   const schedulePush = useCallback((next: TrackerDocument) => {

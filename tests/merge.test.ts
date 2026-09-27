@@ -17,4 +17,33 @@ describe("cross-device merge", () => {
     const remote = { ...base, drives: [record] };
     expect(mergeTrackers(local, remote).drives).toHaveLength(0);
   });
+
+  it("keeps routes added on another device when this device saved more recently", () => {
+    const base = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    const route = { id: "route-a", name: "Loop", googleMapsUrl: "https://maps.app.goo.gl/x", priorCompletions: 0, createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z" };
+    const remote = { ...base, routes: [route], updatedAt: "2026-08-20T12:00:00Z" };
+    const local = { ...base, routes: [], updatedAt: "2026-08-25T12:00:00Z" };
+    expect(mergeTrackers(local, remote).routes).toEqual([route]);
+    expect(mergeTrackers(remote, local).routes).toEqual([route]);
+  });
+
+  it("keeps the newest version of an edited route", () => {
+    const base = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    const route = { id: "route-a", name: "Loop", googleMapsUrl: "https://maps.app.goo.gl/x", priorCompletions: 0, createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z" };
+    const edited = { ...route, name: "Renamed loop", updatedAt: "2026-08-22T12:00:00Z" };
+    const local = { ...base, routes: [route], updatedAt: "2026-08-25T12:00:00Z" };
+    const remote = { ...base, routes: [edited], updatedAt: "2026-08-22T12:00:00Z" };
+    expect(mergeTrackers(local, remote).routes).toEqual([edited]);
+  });
+
+  it("does not resurrect deleted routes or manoeuvres", () => {
+    const base = createDefaultTracker(new Date("2026-08-01T12:00:00Z"));
+    const route = { id: "route-a", name: "Loop", googleMapsUrl: "https://maps.app.goo.gl/x", priorCompletions: 0, createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z" };
+    const [removed, ...kept] = base.manoeuvres;
+    const local = { ...base, routes: [], manoeuvres: kept, deletions: { "route-a": "2026-08-22T12:00:00Z", [removed.id]: "2026-08-22T12:00:00Z" } };
+    const remote = { ...base, routes: [route], updatedAt: "2026-08-30T12:00:00Z" };
+    const merged = mergeTrackers(local, remote);
+    expect(merged.routes).toHaveLength(0);
+    expect(merged.manoeuvres.map((manoeuvre) => manoeuvre.id)).toEqual(kept.map((manoeuvre) => manoeuvre.id));
+  });
 });
